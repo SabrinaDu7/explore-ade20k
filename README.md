@@ -1,5 +1,13 @@
 # ade20k Dataset Exploration
 
+## Running Notebooks
+
+Notebooks are stored as `.py` files (jupytext percent format). To run one:
+
+```bash
+uv run jupytext --sync notebooks/<filename>.py
+```
+
 ## Dataset
 
 **Name:** ade20k
