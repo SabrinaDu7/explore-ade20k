@@ -28,6 +28,28 @@ uv run jupytext --sync notebooks/<filename>.py
 - The sizes of the images (look with your eyes to see how much cropping changes the image and squishing changes the image.)
 
 
+## Outputs
+
+### `outputs/ade20k_df_flat.parquet` — one row per (image, class) pair
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `image_idx` | int | 0-based index into the sorted validation annotation file list |
+| `class_idx` | int | 1-based ADE20K class index (1–150) |
+| `class_name` | str | Primary name of the class (first comma-separated entry from objectInfo150.txt) |
+| `area` | float | Fraction of image pixels occupied by the class |
+| `object_count` | int | Number of connected components for the class in this image |
+
+### `outputs/ade20k_df_stats.parquet` — one row per class, indexed by `class_idx`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `object_count` | int | Total connected-component count across the validation set |
+| `mean_area` | float | Mean per-image area fraction across images where the class appears |
+| `max_area` | float | Maximum per-image area fraction |
+| `min_area` | float | Minimum per-image area fraction |
+| `name` | str | Primary class name |
+
 ## Experiment Context
 
 **Project / experiment this feeds into:**
