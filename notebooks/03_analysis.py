@@ -29,9 +29,15 @@ import pandas as pd
 from PIL import Image
 from scipy.ndimage import label as cc_label
 
-from src.dataset import ade20k_root
-
 ResizeMode = Literal["center_crop", "squish"]
+
+# %% Data root
+def ade20k_root() -> Path:
+    if root := os.environ.get("ADE20K_ROOT"):
+        return Path(root)
+    if tmpdir := os.environ.get("SLURM_TMPDIR"):
+        return Path(tmpdir) / "ADEChallengeData2016"
+    raise ValueError("ADE20K_ROOT env var not set and not running under SLURM")
 
 # %% Computing functions
 @dataclass
@@ -123,10 +129,10 @@ def class_stats_dataframe(flat_df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
 
 # %% Plotting functions
 def plot_area_distribution(flat_df: pd.DataFrame, cfg: Config, n: int = 20, top: bool = True) -> matplotlib.figure.Figure:
-    """Violin plot of per-image area fractions for the top or bottom n most frequent classes."""
+    """Violin plot of per-image area fractions for the n largest or smallest classes by mean area."""
     class_names = _load_class_names(cfg)
-    counts = flat_df.groupby("class_idx").size()
-    ranked = (counts.nlargest(n) if top else counts.nsmallest(n)).index.tolist()
+    mean_area = flat_df.groupby("class_idx")["area"].mean()
+    ranked = (mean_area.nlargest(n) if top else mean_area.nsmallest(n)).index.tolist()
     labels = [class_names[cls].split(",")[0] for cls in ranked]
     data = [flat_df.loc[flat_df["class_idx"] == cls, "area"].values for cls in ranked]
 
@@ -135,8 +141,8 @@ def plot_area_distribution(flat_df: pd.DataFrame, cfg: Config, n: int = 20, top:
     ax.set_xticks(range(len(labels)))
     ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
     ax.set_ylabel("Fraction of image area")
-    rank_label = "top" if top else "bottom"
-    ax.set_title(f"Area distribution — {rank_label} {n} classes by image count (val set)")
+    rank_label = "largest" if top else "smallest"
+    ax.set_title(f"Area distribution — {n} {rank_label} classes by mean area (val set)")
     fig.tight_layout()
     return fig
 
@@ -150,6 +156,44 @@ def plot_metric_histogram(stats_df: pd.DataFrame, metric: str, top_n: int = 30) 
     ax.set_xticklabels(sorted_df["name"], rotation=45, ha="right", fontsize=8)
     ax.set_ylabel(metric)
     ax.set_title(f"{metric} — top {top_n} classes (val set)")
+    fig.tight_layout()
+    return fig
+
+
+def plot_instance_count_distribution(
+    flat_df: pd.DataFrame,
+    cfg: Config,
+    n: int = 20,
+    top: bool = True,
+    rank_by: Literal["count", "area"] = "count",
+) -> matplotlib.figure.Figure:
+    """Violin plot of per-image instance counts for the top or bottom n classes.
+
+    Args:
+        rank_by: "count" ranks by number of images the class appears in;
+                 "area" ranks by mean fraction of image area occupied.
+    X-axis: class name; Y-axis: object_count per image (n = images the class appears in)
+    """
+    class_names = _load_class_names(cfg)
+    if rank_by == "area":
+        metric = flat_df.groupby("class_idx")["area"].mean()
+    else:
+        metric = flat_df.groupby("class_idx").size()
+    ranked = (metric.nlargest(n) if top else metric.nsmallest(n)).index.tolist()
+    labels = [class_names[cls].split(",")[0] for cls in ranked]
+    n_images = [flat_df.groupby("class_idx").size()[cls] for cls in ranked]
+    data = [flat_df.loc[flat_df["class_idx"] == cls, "object_count"].values for cls in ranked]
+
+    fig, ax = plt.subplots(figsize=(14, 5))
+    ax.violinplot(data, positions=range(len(data)), showmedians=True)
+    ax.set_xticks(range(len(labels)))
+    ax.set_xticklabels(
+        [f"{lbl}\n(n={ni})" for lbl, ni in zip(labels, n_images)],
+        rotation=45, ha="right", fontsize=8,
+    )
+    ax.set_ylabel("Instances per image (connected components)")
+    rank_label = "top" if top else "bottom"
+    ax.set_title(f"Instance count distribution — {rank_label} {n} classes by {rank_by} (val set)")
     fig.tight_layout()
     return fig
 
@@ -193,25 +237,34 @@ def img_idx_to_filename_idx(img_idx: int) -> int:
 
 # %% Run functions to show the dataframes
 if __name__ == "__main__":
-    os.environ["ADE20K_ROOT"] = "../data/ADEChallengeData2016/"
+    os.environ["ADE20K_ROOT"] = "../data/ADEChallengeData2016"
     cfg = Config(probe_repo="canvit-probes")
+
     flat_df = build_image_class_dataframe(cfg)
-    # print(flat_df.head())
     df = class_stats_dataframe(flat_df, cfg)
-    print(df.head(20))
     img_idx = filename_idx_to_img_idx(1809)
+    
+    print(flat_df.head())
+    print(df.head(20))
     print(flat_df[flat_df["image_idx"] == img_idx])
+
+    # flat_df.to_parquet("outputs/ade20k_df_flat.parquet", compression='snappy')
+    # df.to_parquet("outputs/ade20k_df_stats.parquet", compression='snappy')
 
 # %% Run functions to show the histograms
 if __name__ == "__main__":
-    plot_area_distribution(flat_df, cfg, n=20, top=False)
-    plt.show()
     for metric in ("object_count", "mean_area", "max_area"):
         plot_metric_histogram(df, metric)
         plt.show()
 
-# %% Size vs instances violin
+# %% Violins
 if __name__ == "__main__":
+    plot_area_distribution(flat_df, cfg, n=20, top=False)
+    plt.show()
+
+    plot_instance_count_distribution(flat_df, cfg, n=20, top=False, rank_by="area") # original: rank_by="count"
+    plt.show()
+
     plot_size_vs_instances_violin(flat_df)
     plt.show()
 
