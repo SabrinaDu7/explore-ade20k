@@ -18,114 +18,14 @@
 
 # %% Imports
 import os
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Literal
 
 import matplotlib.figure
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from PIL import Image
-from scipy.ndimage import label as cc_label
 
-ResizeMode = Literal["center_crop", "squish"]
-
-# %% Data root
-def ade20k_root() -> Path:
-    if root := os.environ.get("ADE20K_ROOT"):
-        return Path(root)
-    if tmpdir := os.environ.get("SLURM_TMPDIR"):
-        return Path(tmpdir) / "ADEChallengeData2016"
-    raise ValueError("ADE20K_ROOT env var not set and not running under SLURM")
-
-# %% Computing functions
-@dataclass
-class Config:
-    probe_repo: str
-    ade20k_root: Path = field(default_factory=ade20k_root)
-    output: Path = Path("results/ade20k_seg.pt")
-    scene_size: int = 512
-    resize_mode: ResizeMode = "squish"
-    device: str = "cuda"
-    batch_size: int = 32
-    num_workers: int = 8
-    amp: bool = True
-
-
-def _load_class_names(cfg: Config) -> dict[int, str]:
-    info_path = cfg.ade20k_root / "objectInfo150.txt"
-    names = {}
-    with open(info_path) as f:
-        next(f)  # skip header
-        for line in f:
-            parts = line.rstrip("\n").split("\t")
-            idx = int(parts[0].strip())
-            names[idx] = parts[4].strip()
-    return names
-
-
-def compute_class_area(ann: np.ndarray, class_idx: int) -> float:
-    """Fraction of pixels in ann occupied by class_idx (1-indexed)."""
-    return float((ann == class_idx).sum() / ann.size)
-
-
-def build_image_class_dataframe(cfg: Config) -> pd.DataFrame:
-    """One row per (image, class) pair observed in the validation set.
-
-    Columns:
-        image_idx   int   0-based index into the sorted annotation file list
-        class_idx   int   1-based ADE20K class index
-        class_name  str   primary name of the class (first comma-separated entry)
-        area        float fraction of image pixels occupied by the class
-        object_count int  number of connected components for the class in this image
-    """
-    ann_dir = cfg.ade20k_root / "annotations" / "validation"
-    class_names = _load_class_names(cfg)
-    rows = []
-    for image_idx, ann_path in enumerate(sorted(ann_dir.glob("*.png"))):
-        arr = np.array(Image.open(ann_path))
-        for cls in np.unique(arr).tolist():
-            if cls == 0 or cls > 150:
-                continue
-            mask = arr == cls
-            area = compute_class_area(arr, cls)
-            n_obj = int(cc_label(mask)[1])
-            rows.append({
-                "image_idx": image_idx,
-                "class_idx": cls,
-                "class_name": class_names[cls].split(",")[0],
-                "area": area,
-                "object_count": n_obj,
-            })
-    return pd.DataFrame(rows)
-
-
-def class_area_range(flat_df: pd.DataFrame, class_idx: int) -> tuple[float, float]:
-    """Return (min_area, max_area) across all validation images for class_idx."""
-    areas = flat_df.loc[flat_df["class_idx"] == class_idx, "area"]
-    if areas.empty:
-        return (0.0, 0.0)
-    return float(areas.min()), float(areas.max())
-
-
-def compute_object_count(flat_df: pd.DataFrame, class_idx: int) -> int:
-    """Total connected-component count for class_idx across the validation set."""
-    return int(flat_df.loc[flat_df["class_idx"] == class_idx, "object_count"].sum())
-
-
-def class_stats_dataframe(flat_df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
-    """Aggregate flat_df to one row per class: object_count, mean_area, max_area, min_area."""
-    class_names = _load_class_names(cfg)
-    stats = flat_df.groupby("class_idx").agg(
-        object_count=("object_count", "sum"),
-        mean_area=("area", "mean"),
-        max_area=("area", "max"),
-        min_area=("area", "min"),
-    )
-    stats["name"] = stats.index.map(lambda i: class_names[i].split(",")[0])
-    return stats.sort_values("object_count", ascending=False)
-
+from src.dataframes import Config, build_image_class_dataframe, class_stats_dataframe, _load_class_names
 
 # %% Plotting functions
 def plot_area_distribution(flat_df: pd.DataFrame, cfg: Config, n: int = 20, top: bool = True) -> matplotlib.figure.Figure:
@@ -133,7 +33,8 @@ def plot_area_distribution(flat_df: pd.DataFrame, cfg: Config, n: int = 20, top:
     class_names = _load_class_names(cfg)
     mean_area = flat_df.groupby("class_idx")["area"].mean()
     ranked = (mean_area.nlargest(n) if top else mean_area.nsmallest(n)).index.tolist()
-    labels = [class_names[cls].split(",")[0] for cls in ranked]
+    n_images = flat_df.groupby("class_idx").size()
+    labels = [f"{class_names[cls].split(',')[0]}\n(n={n_images[cls]})" for cls in ranked]
     data = [flat_df.loc[flat_df["class_idx"] == cls, "area"].values for cls in ranked]
 
     fig, ax = plt.subplots(figsize=(14, 5))
@@ -160,73 +61,6 @@ def plot_metric_histogram(stats_df: pd.DataFrame, metric: str, top_n: int = 30) 
     return fig
 
 
-def plot_instance_count_distribution(
-    flat_df: pd.DataFrame,
-    cfg: Config,
-    n: int = 20,
-    top: bool = True,
-    rank_by: Literal["count", "area"] = "count",
-) -> matplotlib.figure.Figure:
-    """Violin plot of per-image instance counts for the top or bottom n classes.
-
-    Args:
-        rank_by: "count" ranks by number of images the class appears in;
-                 "area" ranks by mean fraction of image area occupied.
-    X-axis: class name; Y-axis: object_count per image (n = images the class appears in)
-    """
-    class_names = _load_class_names(cfg)
-    if rank_by == "area":
-        metric = flat_df.groupby("class_idx")["area"].mean()
-    else:
-        metric = flat_df.groupby("class_idx").size()
-    ranked = (metric.nlargest(n) if top else metric.nsmallest(n)).index.tolist()
-    labels = [class_names[cls].split(",")[0] for cls in ranked]
-    n_images = [flat_df.groupby("class_idx").size()[cls] for cls in ranked]
-    data = [flat_df.loc[flat_df["class_idx"] == cls, "object_count"].values for cls in ranked]
-
-    fig, ax = plt.subplots(figsize=(14, 5))
-    ax.violinplot(data, positions=range(len(data)), showmedians=True)
-    ax.set_xticks(range(len(labels)))
-    ax.set_xticklabels(
-        [f"{lbl}\n(n={ni})" for lbl, ni in zip(labels, n_images)],
-        rotation=45, ha="right", fontsize=8,
-    )
-    ax.set_ylabel("Instances per image (connected components)")
-    rank_label = "top" if top else "bottom"
-    ax.set_title(f"Instance count distribution — {rank_label} {n} classes by {rank_by} (val set)")
-    fig.tight_layout()
-    return fig
-
-
-def plot_size_vs_instances_violin(flat_df: pd.DataFrame) -> matplotlib.figure.Figure:
-    """Violin plot of object_count distributions binned by class area (% of image).
-
-    X-axis: area bins (log-spaced to handle the heavy skew toward small objects)
-    Y-axis: object_count (connected components per image-class pair)
-    """
-    pct = flat_df["area"] * 100
-    bin_edges = [0, 0.1, 0.5, 1, 2, 5, 10, 20, 50, 100]
-    bin_labels = ["0–0.1", "0.1–0.5", "0.5–1", "1–2", "2–5", "5–10", "10–20", "20–50", "50–100"]
-    bins = pd.cut(pct, bins=bin_edges, labels=bin_labels, right=True)
-    grouped = flat_df.groupby(bins, observed=True)["object_count"]
-    data = [g.values for _, g in grouped if len(g) > 1]
-    labels = [lbl for lbl, g in grouped if len(g) > 1]
-    counts = [len(g) for _, g in grouped if len(g) > 1]
-
-    fig, ax = plt.subplots(figsize=(13, 5))
-    parts = ax.violinplot(data, positions=range(len(data)), showmedians=True)
-    ax.set_xticks(range(len(labels)))
-    ax.set_xticklabels(
-        [f"{lbl}%\n(n={c})" for lbl, c in zip(labels, counts)],
-        fontsize=8,
-    )
-    ax.set_xlabel("Object class area (% of image)")
-    ax.set_ylabel("Instances per image (connected components)")
-    ax.set_title("Instance count distribution by object size bin (flat_df, val set)")
-    fig.tight_layout()
-    return fig
-
-
 def filename_idx_to_img_idx(filename_idx: int) -> int:
     return filename_idx - 1
 
@@ -234,26 +68,46 @@ def filename_idx_to_img_idx(filename_idx: int) -> int:
 def img_idx_to_filename_idx(img_idx: int) -> int:
     return img_idx + 1
 
-
-# %% Run functions to show the dataframes
+# %% Load dfs
 if __name__ == "__main__":
     os.environ["ADE20K_ROOT"] = "../data/ADEChallengeData2016"
     cfg = Config(probe_repo="canvit-probes")
 
     flat_df = build_image_class_dataframe(cfg)
     df = class_stats_dataframe(flat_df, cfg)
+
+# %% Print dfs
+if __name__ == "__main__":
     img_idx = filename_idx_to_img_idx(1809)
-    
     print(flat_df.head())
     print(df.head(20))
     print(flat_df[flat_df["image_idx"] == img_idx])
 
-    # flat_df.to_parquet("outputs/ade20k_df_flat.parquet", compression='snappy')
-    # df.to_parquet("outputs/ade20k_df_stats.parquet", compression='snappy')
+# %% Show image and mask
+if __name__ == "__main__":
+    ann_dir = cfg.ade20k_root / "annotations" / "validation"
+    img_dir = cfg.ade20k_root / "images" / "validation"
+
+    ann_paths = sorted(ann_dir.glob("*.png"))
+    img_paths = sorted(img_dir.glob("*.jpg"))
+
+    ann = np.array(Image.open(ann_paths[img_idx]))
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    axes[0].imshow(Image.open(img_paths[img_idx]))
+    axes[0].set_title(f"Image (filename idx {img_idx_to_filename_idx(img_idx)})")
+    axes[0].axis("off")
+
+    axes[1].imshow(ann, cmap="tab20", interpolation="nearest", vmin=0, vmax=150)
+    axes[1].set_title("Segmentation mask")
+    axes[1].axis("off")
+
+    plt.tight_layout()
+    plt.show()
 
 # %% Run functions to show the histograms
 if __name__ == "__main__":
-    for metric in ("object_count", "mean_area", "max_area"):
+    for metric in ("mean_area", "max_area"):
         plot_metric_histogram(df, metric)
         plt.show()
 
@@ -261,10 +115,3 @@ if __name__ == "__main__":
 if __name__ == "__main__":
     plot_area_distribution(flat_df, cfg, n=20, top=False)
     plt.show()
-
-    plot_instance_count_distribution(flat_df, cfg, n=20, top=False, rank_by="area") # original: rank_by="count"
-    plt.show()
-
-    plot_size_vs_instances_violin(flat_df)
-    plt.show()
-

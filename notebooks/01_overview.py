@@ -30,7 +30,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
 
-from src.dataset import ade20k_root
+from src.io import ade20k_root
 
 ResizeMode = Literal["center_crop", "squish"]
 
