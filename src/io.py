@@ -1,12 +1,12 @@
 """Persistence utilities for ADE20K analysis outputs."""
 
+import os
 from pathlib import Path
-
 import pandas as pd
 
-
-def save_dataframes(flat_df: pd.DataFrame, stats_df: pd.DataFrame, output_dir: Path) -> None:
-    """Save flat_df and stats_df to parquet in output_dir."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    flat_df.to_parquet(output_dir / "ade20k_df_flat.parquet")
-    stats_df.to_parquet(output_dir / "ade20k_df_stats.parquet")
+def ade20k_root() -> Path:
+    if root := os.environ.get("ADE20K_ROOT"):
+        return Path(root)
+    if tmpdir := os.environ.get("SLURM_TMPDIR"):
+        return Path(tmpdir) / "ADEChallengeData2016"
+    raise ValueError("ADE20K_ROOT env var not set and not running under SLURM")
