@@ -38,13 +38,11 @@ uv run jupytext --sync notebooks/<filename>.py
 | `class_idx` | int | 1-based ADE20K class index (1–150) |
 | `class_name` | str | Primary name of the class (first comma-separated entry from objectInfo150.txt) |
 | `area` | float | Fraction of image pixels occupied by the class |
-| `object_count` | int | Number of connected components for the class in this image |
 
 ### `outputs/ade20k_df_stats.parquet` — one row per class, indexed by `class_idx`
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `object_count` | int | Total connected-component count across the validation set |
 | `mean_area` | float | Mean per-image area fraction across images where the class appears |
 | `max_area` | float | Maximum per-image area fraction |
 | `min_area` | float | Minimum per-image area fraction |
