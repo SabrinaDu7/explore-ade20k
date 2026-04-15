@@ -12,7 +12,6 @@ description = "Exploratory analysis of the ade20k dataset"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "canvit-probes",
     "canvit-pytorch",
     "dinov3",
     "torch>=2.0",
@@ -26,6 +25,8 @@ dependencies = [
     "ipykernel>=7.2.0",
     "pypatree>=0.4.0",
     "pyarrow>=23.0.1",
+    "transformers>=5.5.4",
+    "canvit-specialize",
 ]
 
 [tool.ruff]
@@ -44,7 +45,7 @@ testpaths = ["test"]
 [tool.uv.sources]
 dinov3 = { git = "https://github.com/yberreby/dinov3.git" }
 canvit-pytorch = { git = "https://github.com/m2b3/CanViT-PyTorch.git" }
-canvit-probes = { git = "ssh://git@github.com/m2b3/CanViT-probes.git", branch = "main" }
+canvit-specialize = { git = "ssh://git@github.com/m2b3/CanViT-specialize" }
 
 [dependency-groups]
 dev = [

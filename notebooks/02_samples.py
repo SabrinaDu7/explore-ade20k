@@ -29,7 +29,7 @@ from typing import Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
-from canvit_probes.datasets.ade20k import (
+from canvit_specialize.datasets.ade20k import (
     IGNORE_LABEL,
     ADE20kDataset,
     make_val_transforms,
