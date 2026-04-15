@@ -106,7 +106,7 @@ def main(cfg: Config) -> None:
             feats = teacher.forward_norm_features(resized).patches  # [B, grid*grid, D], bfloat16
 
             # async DMA: GPU → pinned CPU, no sync stall
-            feats_all[batch_start : batch_start + B].copy_(feats.cpu(), non_blocking=True)
+            feats_all[batch_start : batch_start + B].copy_(feats.float(), non_blocking=True)
             masks_all[batch_start : batch_start + B].copy_(masks.to(torch.uint8), non_blocking=True)
             for i in range(B):
                 image_names[batch_start + i] = dataset.images[batch_start + i].stem
