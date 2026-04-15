@@ -27,7 +27,84 @@ from PIL import Image
 
 from src.dataframes import Config, build_image_class_dataframe, class_stats_dataframe, _load_class_names
 
-# %% Plotting functions
+# %% Spatial distribution functions
+def class_name_to_idx(name: str, cfg: Config) -> int:
+    """Return the 1-based ADE20K class index for a class name.
+
+    Matches against all comma-separated aliases in objectInfo150.txt (case-insensitive).
+    Raises ValueError if the name doesn't match any of the 150 classes.
+    """
+    class_names = _load_class_names(cfg)
+    name_lower = name.strip().lower()
+    for idx, full_name in class_names.items():
+        for part in full_name.split(","):
+            if part.strip().lower() == name_lower:
+                return idx
+    raise ValueError(
+        f"{name!r} does not match any ADE20K class. Check objectInfo150.txt for valid names."
+    )
+
+
+def plot_spatial_distribution(
+    names: list[str],
+    cfg: Config,
+    batch_size: int = 64,
+) -> matplotlib.figure.Figure:
+    """Heatmap of spatial distribution for each named class across the validation set.
+
+    Loads annotations in batches and computes mask sums with vectorised numpy operations.
+    The result per pixel is P(pixel == class | class is present in the image).
+
+    Args:
+        names:      Class name strings (e.g. ["tree", "person"]). Raises ValueError for
+                    any name that doesn't match an ADE20K class.
+        cfg:        Config with ade20k_root and scene_size.
+        batch_size: Number of annotation images to load at once.
+    """
+    class_indices = [class_name_to_idx(n, cfg) for n in names]
+    size = cfg.scene_size
+    n_classes = len(class_indices)
+
+    # heatmaps[i] accumulates pixel-wise presence count for class_indices[i]
+    heatmaps = np.zeros((n_classes, size, size), dtype=np.float64)
+    appearances = np.zeros(n_classes, dtype=np.int64)
+
+    ann_paths = sorted((cfg.ade20k_root / "annotations" / "validation").glob("*.png"))
+    for batch_start in range(0, len(ann_paths), batch_size):
+        batch = np.stack([
+            np.array(Image.open(p).resize((size, size), Image.NEAREST))
+            for p in ann_paths[batch_start : batch_start + batch_size]
+        ])  # (B, size, size) uint8
+
+        for i, idx in enumerate(class_indices):
+            masks = batch == idx                        # (B, size, size) bool
+            heatmaps[i] += masks.sum(axis=0)
+            appearances[i] += masks.any(axis=(1, 2)).sum()
+
+    for i in range(n_classes):
+        if appearances[i] > 0:
+            heatmaps[i] /= appearances[i]
+
+    ncols = 3
+    nrows = (len(names) + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows), squeeze=False)
+    axes_flat = axes.flatten()
+
+    for i, (name, idx) in enumerate(zip(names, class_indices)):
+        ax = axes_flat[i]
+        im = ax.imshow(heatmaps[i], cmap="viridis", vmin=0, interpolation="nearest")
+        ax.set_title(f"{name} (n={appearances[i]})")
+        ax.axis("off")
+        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+    for ax in axes_flat[len(names):]:
+        ax.set_visible(False)
+
+    fig.tight_layout()
+    return fig
+
+
+# %% Plotting area functions
 def plot_area_distribution(flat_df: pd.DataFrame, cfg: Config, n: int = 20, top: bool = True) -> matplotlib.figure.Figure:
     """Violin plot of per-image area fractions for the n largest or smallest classes by mean area."""
     class_names = _load_class_names(cfg)
@@ -71,7 +148,7 @@ def img_idx_to_filename_idx(img_idx: int) -> int:
 # %% Load dfs
 if __name__ == "__main__":
     os.environ["ADE20K_ROOT"] = "../data/ADEChallengeData2016"
-    cfg = Config(probe_repo="canvit-probes")
+    cfg = Config(probe_repo="canvit-specialize")
 
     flat_df = build_image_class_dataframe(cfg)
     df = class_stats_dataframe(flat_df, cfg)
@@ -114,4 +191,9 @@ if __name__ == "__main__":
 # %% Violins
 if __name__ == "__main__":
     plot_area_distribution(flat_df, cfg, n=20, top=False)
+    plt.show()
+
+# %% Spatial heatmaps
+if __name__ == "__main__":
+    plot_spatial_distribution(names=["sky", "building", "person"], cfg=cfg)
     plt.show()
