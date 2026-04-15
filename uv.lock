@@ -79,9 +79,28 @@ wheels = [
 ]
 
 [[package]]
+name = "canvit-eval"
+version = "0.1.0"
+source = { git = "ssh://git@github.com/m2b3/CanViT-eval#3635127d3e320c764bd4a5709850a68749490c4c" }
+dependencies = [
+    { name = "canvit-pytorch" },
+    { name = "canvit-specialize" },
+    { name = "huggingface-hub" },
+    { name = "pillow" },
+    { name = "safetensors" },
+    { name = "torch", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
+    { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux'" },
+    { name = "torchvision", version = "0.26.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
+    { name = "torchvision", version = "0.26.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux'" },
+    { name = "tqdm" },
+    { name = "transformers" },
+    { name = "tyro" },
+]
+
+[[package]]
 name = "canvit-pytorch"
 version = "0.1.9"
-source = { git = "https://github.com/m2b3/CanViT-PyTorch.git#e91a35143b21c37aa6db777e336fffd0b5aeeeda" }
+source = { git = "https://github.com/m2b3/CanViT-PyTorch.git#96f91f9860c0cd5d380cf8610e1abe433627cc20" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "numpy" },
@@ -95,7 +114,7 @@ dependencies = [
 [[package]]
 name = "canvit-specialize"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/m2b3/CanViT-specialize#c12f45583117f17ab9b5cf5d5657862aa1483e01" }
+source = { git = "ssh://git@github.com/m2b3/CanViT-specialize.git#c12f45583117f17ab9b5cf5d5657862aa1483e01" }
 dependencies = [
     { name = "canvit-pytorch" },
     { name = "comet-ml" },
@@ -2172,6 +2191,7 @@ name = "src"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "canvit-eval" },
     { name = "canvit-pytorch" },
     { name = "canvit-specialize" },
     { name = "dinov3" },
@@ -2201,6 +2221,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "canvit-eval", git = "ssh://git@github.com/m2b3/CanViT-eval" },
     { name = "canvit-pytorch", git = "https://github.com/m2b3/CanViT-PyTorch.git" },
     { name = "canvit-specialize", git = "ssh://git@github.com/m2b3/CanViT-specialize" },
     { name = "dinov3", git = "https://github.com/yberreby/dinov3.git" },

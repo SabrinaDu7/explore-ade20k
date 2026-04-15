@@ -13,6 +13,8 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "canvit-pytorch",
+    "canvit-specialize",
+    "canvit-eval",
     "dinov3",
     "torch>=2.0",
     "torchvision",
@@ -26,7 +28,6 @@ dependencies = [
     "pypatree>=0.4.0",
     "pyarrow>=23.0.1",
     "transformers>=5.5.4",
-    "canvit-specialize",
 ]
 
 [tool.ruff]
@@ -46,6 +47,7 @@ testpaths = ["test"]
 dinov3 = { git = "https://github.com/yberreby/dinov3.git" }
 canvit-pytorch = { git = "https://github.com/m2b3/CanViT-PyTorch.git" }
 canvit-specialize = { git = "ssh://git@github.com/m2b3/CanViT-specialize" }
+canvit-eval = { git = "ssh://git@github.com/m2b3/CanViT-eval" }
 
 [dependency-groups]
 dev = [
