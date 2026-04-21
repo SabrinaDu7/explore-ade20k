@@ -1,9 +1,14 @@
 """Persistence utilities for ADE20K analysis outputs."""
 
 import os
+import urllib.request
 from pathlib import Path
 from typing import Literal
 from dataclasses import dataclass, field
+
+_OBJECT_INFO_URL = (
+    "http://sceneparsing.csail.mit.edu/data/ADEChallengeData2016/objectInfo150.txt"
+)
 
 from PIL import Image
 import pandas as pd
@@ -29,6 +34,10 @@ class Config:
 
 def _load_class_names(cfg: Config) -> dict[int, str]:
     info_path = cfg.ade20k_root / "objectInfo150.txt"
+    print(info_path)
+    if not info_path.exists():
+        info_path.parent.mkdir(parents=True, exist_ok=True)
+        urllib.request.urlretrieve(_OBJECT_INFO_URL, info_path)
     names = {}
     with open(info_path) as f:
         next(f)  # skip header
@@ -93,7 +102,7 @@ def class_stats_dataframe(flat_df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     return stats.sort_values("mean_area", ascending=False)
 
 if __name__ == "__main__":
-    os.environ["ADE20K_ROOT"] = "./data/ADEChallengeData2016"
+    os.environ.setdefault("ADE20K_ROOT", "./data/ADEChallengeData2016")
     cfg = Config(probe_repo="canvit-probes")
 
     flat_df = build_image_class_dataframe(cfg)
